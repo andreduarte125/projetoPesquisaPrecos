@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pesquisa de Preços</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        #codigo-produto {
+            width: calc(100% - 12px);
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input[type="text"], .input-preco-formatado {
+            width: calc(100% - 12px);
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .input-preco-formatado {
+            background-color: #e9ecef; 
+        }
+
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        #adicionar-item {
+            background-color: #007bff;
+            color: white;
+        }
+        #gerar-csv {
+            background-color: #28a745;
+            color: white;
+        }
+        #lista-pesquisa {
+            margin-top: 20px;
+        }
+        #tabela-pesquisa {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        #tabela-pesquisa th, #tabela-pesquisa td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #tabela-pesquisa th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+        .btn-excluir {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            line-height: 1;
+        }
+        #tabela-pesquisa th:last-child, #tabela-pesquisa td:last-child {
+            width: 50px; 
+            text-align: center;
+        }
+        /* Novo estilo para a mensagem de dados pendentes */
+        #aviso-pendente {
+            background-color: #ffc107;
+            color: #343a40;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🔍 Pesquisa de Preços</h1>
+        
+        <div id="aviso-pendente" style="display: none;">
+            ⚠️ Você tem pesquisas pendentes! Elas foram recuperadas automaticamente.
+        </div>
+        
+        <form id="form-pesquisa">
+            <div class="form-group">
+                <label for="codigo-produto">Código Interno do Produto (Somente Números):</label>
+                <input type="text" id="codigo-produto" required>
+            </div>
+            <div class="form-group">
+                <label for="nome-produto">Nome do Produto Pesquisado:</label>
+                <input type="text" id="nome-produto" required>
+            </div>
+            <div class="form-group">
+                <label for="local-pesquisado">Local Pesquisado:</label>
+                <input type="text" id="local-pesquisado" required>
+            </div>
+            <div class="form-group">
+                <label for="preco-pesquisado">Preço Pesquisado:</label>
+                <input type="text" id="preco-pesquisado" class="input-preco-formatado" placeholder="R$ 0,00" required>
+            </div>
+            <button type="submit" id="adicionar-item">➕ Adicionar Item</button>
+        </form>
+
+        <hr>
+
+        <section id="lista-pesquisa">
+            <h2>🛒 Itens Pesquisados</h2>
+            <table id="tabela-pesquisa">
+                <thead>
+                    <tr>
+                        <th>Cód. Produto</th>
+                        <th>Nome</th>
+                        <th>Local</th>
+                        <th>Preço (R$)</th>
+                        <th>Ação</th> 
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+        </section>
+        
+        <hr>
+
+        <button id="gerar-csv" disabled>💾 Gerar Planilha</button> 
+    </div>
+
+    <script>
+        // Inicializa o array de dados como uma variável let para que possa ser modificada no carregamento
+        let dadosPesquisa = []; 
+        const STORAGE_KEY = 'pesquisaDePrecos'; // Chave de salvamento no localStorage
+
+        const tabelaBody = document.querySelector('#tabela-pesquisa tbody');
+        const botaoGerarPlanilha = document.getElementById('gerar-csv');
+        const inputPreco = document.getElementById('preco-pesquisado');
+        const inputNomeProduto = document.getElementById('nome-produto');
+        const inputLocalPesquisado = document.getElementById('local-pesquisado');
+        const inputCodigoProduto = document.getElementById('codigo-produto');
+        const avisoPendente = document.getElementById('aviso-pendente');
+
+
+        // --- FUNÇÕES DE PERSISTÊNCIA ---
+
+        // Salva o array de dados no localStorage
+        function salvarDados() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(dadosPesquisa));
+            verificarBotaoCSV();
+        }
+
+        // Carrega os dados do localStorage ao abrir a página
+        function carregarDados() {
+            const dadosSalvos = localStorage.getItem(STORAGE_KEY);
+            if (dadosSalvos) {
+                // Converte a string JSON de volta para o array de objetos
+                dadosPesquisa = JSON.parse(dadosSalvos); 
+                
+                // Popula a tabela com os dados recuperados
+                dadosPesquisa.forEach(item => adicionarLinhaTabela(item, false));
+                
+                // Exibe a mensagem de aviso de dados recuperados
+                if (dadosPesquisa.length > 0) {
+                    avisoPendente.style.display = 'block';
+                }
+            }
+            verificarBotaoCSV();
+        }
+        
+        // --- RESTANTE DAS FUNÇÕES ---
+        
+        // --- VALIDAÇÃO DE CÓDIGO INTERNO (SOMENTE NÚMEROS) ---
+        inputCodigoProduto.addEventListener('input', function(e) {
+            e.target.value = e.target.value.replace(/\D/g, ''); 
+        });
+
+
+        // --- FUNÇÃO PARA FORMATAR O PREÇO EM TEMPO REAL ---
+        inputPreco.addEventListener('input', function(e) {
+            let value = e.target.value;
+            value = value.replace(/\D/g, ''); 
+            
+            if (value === '') {
+                e.target.value = '';
+                return;
+            }
+
+            value = String(Number(value)); 
+
+            if (value.length <= 2) {
+                value = value.padStart(3, '0'); 
+            }
+            
+            let parteInteira = value.slice(0, -2);
+            let parteDecimal = value.slice(-2);
+            
+            parteInteira = parteInteira.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
+
+            e.target.value = 'R$ ' + parteInteira + ',' + parteDecimal;
+        });
+
+
+        // --- ADICIONAR ITEM À PESQUISA ---
+        document.getElementById('form-pesquisa').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            let precoFormatado = inputPreco.value;
+            let precoNumerico = precoFormatado.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+            
+             if (isNaN(parseFloat(precoNumerico)) || parseFloat(precoNumerico) <= 0) {
+                alert('Por favor, insira um preço válido (maior que R$ 0,00).');
+                return;
+            }
+
+            const item = {
+                id: Date.now(), 
+                codigo: inputCodigoProduto.value,
+                nome: inputNomeProduto.value.toUpperCase(), 
+                local: inputLocalPesquisado.value.toUpperCase(), 
+                preco: parseFloat(precoNumerico).toFixed(2) 
+            };
+
+            dadosPesquisa.push(item);
+            adicionarLinhaTabela(item, true); // Adiciona e salva
+            
+            event.target.reset(); 
+            inputPreco.value = ''; 
+        });
+
+        // --- EXCLUIR ITEM (COM CONFIRMAÇÃO) ---
+        function excluirItem(itemId) {
+            const itemParaExcluir = dadosPesquisa.find(item => item.id === itemId);
+            const nomeProduto = itemParaExcluir ? itemParaExcluir.nome : 'o item';
+
+            const confirmarExclusao = confirm(`Deseja realmente excluir o item: "${nomeProduto}"?`);
+            
+            if (confirmarExclusao) {
+                const index = dadosPesquisa.findIndex(item => item.id === itemId);
+                if (index !== -1) {
+                    dadosPesquisa.splice(index, 1);
+                }
+
+                const row = document.getElementById('row-' + itemId);
+                if (row) {
+                    row.remove();
+                }
+
+                salvarDados(); // Salva o estado atualizado
+                
+                // Esconde o aviso se a lista estiver vazia
+                if (dadosPesquisa.length === 0) {
+                    avisoPendente.style.display = 'none';
+                }
+            }
+        }
+
+        // --- ATUALIZAR TABELA ---
+        // O parâmetro 'deveSalvar' é usado para evitar salvar múltiplas vezes ao carregar a página
+        function adicionarLinhaTabela(item, deveSalvar) {
+            const newRow = tabelaBody.insertRow();
+            newRow.id = 'row-' + item.id; 
+            
+            newRow.insertCell().textContent = item.codigo;
+            newRow.insertCell().textContent = item.nome;
+            newRow.insertCell().textContent = item.local;
+            newRow.insertCell().textContent = `R$ ${item.preco.replace('.', ',')}`; 
+
+            const acaoCell = newRow.insertCell();
+            const btnExcluir = document.createElement('button');
+            btnExcluir.textContent = 'X';
+            btnExcluir.className = 'btn-excluir';
+            btnExcluir.title = 'Excluir Item';
+            btnExcluir.onclick = () => excluirItem(item.id); 
+            acaoCell.appendChild(btnExcluir);
+            
+            if (deveSalvar) {
+                salvarDados(); // Salva após adicionar (apenas quando vem do formulário)
+            }
+        }
+        
+        // --- FUNÇÃO PARA HABILITAR/DESABILITAR O BOTÃO CSV/PLANILHA ---
+        function verificarBotaoCSV() {
+            botaoGerarPlanilha.disabled = dadosPesquisa.length === 0;
+        }
+
+        // --- GERAR CSV E ZERAR PESQUISA ---
+        botaoGerarPlanilha.addEventListener('click', function() {
+            if (dadosPesquisa.length === 0) {
+                alert('Não há itens na lista para gerar a Planilha.');
+                return;
+            }
+
+            const nomeArquivo = prompt('Qual nome deseja salvar essa Planilha? (Ex: Pesquisa_de_Precos_2025-11-15)', 'Pesquisa_de_Precos');
+            
+            if (!nomeArquivo) {
+                return;
+            }
+
+            const cabecalho = "Codigo Produto;Nome Produto;Local Pesquisado;Preco Pesquisado (R$)\n";
+            
+            const linhasCSV = dadosPesquisa.map(item => {
+                const precoCSV = item.preco.replace('.', ','); 
+                return `${item.codigo};${item.nome};${item.local};${precoCSV}`;
+            }).join('\n');
+
+            const conteudoCSV = cabecalho + linhasCSV;
+            
+            const bom = "\ufeff"; 
+            const blob = new Blob([bom + conteudoCSV], { type: 'text/csv;charset=utf-8;' });
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', nomeArquivo + '.csv'); 
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            // AQUI ZERAMOS OS DADOS SALVOS
+            dadosPesquisa = []; // Zera o array
+            localStorage.removeItem(STORAGE_KEY); // Remove do navegador
+            tabelaBody.innerHTML = '';
+            inputPreco.value = '';
+            avisoPendente.style.display = 'none'; // Esconde o aviso
+            verificarBotaoCSV();
+
+            alert(`A Planilha "${nomeArquivo}.csv" foi gerada e a pesquisa foi zerada.`);
+        });
+
+        // --- INICIALIZAÇÃO ---
+        // Chama a função de carregamento ao final do script para popular a tela
+        carregarDados();
+    </script>
+
+</body>
+</html>
